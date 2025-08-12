@@ -9,13 +9,13 @@ from checker import check_usernames
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
 HELP_TEXT = (
-    "🤖 *TikTok Live/Die Checker*\n"
+    "🤖 TikTok Live/Die Checker\n"
     "• /start — thông tin bot\n"
     "• /help — hướng dẫn\n"
     "• /check <username...> — kiểm nhanh 1 hoặc nhiều username (cách nhau bởi khoảng trắng). Ví dụ:\n"
-    "  `/check vuthanh_99 tiktok @sontungmtp`\n"
-    "• Gửi *file .txt* chứa danh sách username (mỗi dòng 1 username) để kiểm hàng loạt.\n"
-    "\nKết quả gồm 3 nhóm: `live`, `banned`, `error`."
+    "  /check vuthanh_99 tiktok @sontungmtp\n"
+    "• Gửi file .txt chứa danh sách username (mỗi dòng 1 username) để kiểm hàng loạt.\n"
+    "Kết quả gồm 3 nhóm: live, banned, error."
 )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -25,7 +25,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_markdown_v2(HELP_TEXT)
+    await update.message.reply_text(HELP_TEXT)
 
 def _chunk_list(lst: List[str], size: int = 1000):
     for i in range(0, len(lst), size):
@@ -34,12 +34,12 @@ def _chunk_list(lst: List[str], size: int = 1000):
 async def _send_results(update: Update, buckets, filename_prefix="results"):
     live, banned, error = buckets.get("live", []), buckets.get("banned", []), buckets.get("error", [])
     summary = (
-        f"✅ *Kết quả:*\n"
+        f"✅ Kết quả:\n"
         f"• Live: {len(live)}\n"
         f"• Banned: {len(banned)}\n"
         f"• Error: {len(error)}"
     )
-    await update.message.reply_markdown_v2(summary)
+    await update.message.reply_text(summary)
 
     files = []
     for name, data in [("live", live), ("banned", banned), ("error", error)]:
