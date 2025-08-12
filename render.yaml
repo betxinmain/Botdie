@@ -1,0 +1,10 @@
+services:
+  - type: worker
+    name: tiktok-checker-bot
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python bot.py"
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
