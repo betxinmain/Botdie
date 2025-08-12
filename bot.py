@@ -4,7 +4,7 @@ import asyncio
 from typing import List
 from telegram import Update, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from checker import check_usernames
+from checker import check_usernames, check_one
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
@@ -12,20 +12,31 @@ HELP_TEXT = (
     "🤖 TikTok Live/Die Checker\n"
     "• /start — thông tin bot\n"
     "• /help — hướng dẫn\n"
-    "• /check <username...> — kiểm nhanh 1 hoặc nhiều username (cách nhau bởi khoảng trắng). Ví dụ:\n"
-    "  /check vuthanh_99 tiktok @sontungmtp\n"
-    "• Gửi file .txt chứa danh sách username (mỗi dòng 1 username) để kiểm hàng loạt.\n"
-    "Kết quả gồm 3 nhóm: live, banned, error."
+    "• /check <username...> — kiểm nhanh 1 hoặc nhiều username (cách nhau bởi khoảng trắng)\n"
+    "• Gửi file .txt (mỗi dòng 1 username) để kiểm hàng loạt.\n"
+    "• /debug <username> — trả về quyết định + đường kiểm tra (tạm dùng khi sai phân loại)"
 )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Chào bạn! Gửi lệnh /help để xem hướng dẫn.\n"
-        "Bạn có thể /check ngay hoặc upload file .txt (mỗi dòng 1 username)."
+        "Chào bạn! Dùng /help để xem hướng dẫn. Bạn có thể /check hoặc gửi file .txt."
     )
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP_TEXT)
+
+async def debug_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Ví dụ: /debug sontungmtp")
+        return
+    username = context.args[0]
+    await update.message.reply_text("🔍 Debug đang chạy...")
+    import requests
+    debug_log = []
+    with requests.Session() as s:
+        u, status = check_one(username, timeout=10.0, session=s, debug=debug_log)
+    text = f"Kết luận: {status}\n" + "\n".join(debug_log[-10:])
+    await update.message.reply_text(text)
 
 def _chunk_list(lst: List[str], size: int = 1000):
     for i in range(0, len(lst), size):
@@ -48,7 +59,6 @@ async def _send_results(update: Update, buckets, filename_prefix="results"):
             files.append(InputFile(
                 io.BytesIO(buf.getvalue().encode("utf-8")), filename=f"{filename_prefix}_{name}.txt"
             ))
-
     for f in files:
         await update.message.reply_document(document=f)
 
@@ -83,6 +93,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("check", check_cmd))
+    app.add_handler(CommandHandler("debug", debug_cmd))
     app.add_handler(MessageHandler(filters.Document.TEXT, handle_text_file))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
