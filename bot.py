@@ -1,143 +1,84 @@
-# -*- coding: utf-8 -*-
 import os
-import io
-import asyncio
-from typing import List
-from pathlib import Path
+import logging
+from dotenv import load_dotenv
+from telegram import Update, FSInputFile
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from checker import check_many, write_results, LIVE, BANNED, ERROR
 
-from telegram import Update, InputFile
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+log = logging.getLogger("checker-bot")
 
-from checker import check_many, LIVE, DIE, ERROR
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+ALLOWED_IDS = {int(x) for x in os.getenv("ALLOWED_USER_IDS", "").replace(",", " ").split() if x.isdigit()}
 
-BASE_DIR = Path(__file__).parent
-RESULTS_DIR = BASE_DIR / "results"
-RESULTS_DIR.mkdir(exist_ok=True)
-
-def _read_env_bool(name: str, default: bool = False) -> bool:
-    v = os.getenv(name)
-    if v is None:
-        return default
-    return str(v).strip().lower() in ("1", "true", "yes", "y")
-
-def get_config():
-    return {
-        "token": os.getenv("BOT_TOKEN", "").strip(),
-        "allowed_ids": {int(i) for i in os.getenv("ALLOWED_USER_IDS", "").replace(" ", "").split(",") if i.isdigit()},
-        "max_bulk": int(float(os.getenv("MAX_BULK", "200"))),
-        "timeout": float(os.getenv("TIMEOUT", "10.0")),
-        "threads": int(float(os.getenv("THREADS", "5"))),
-    }
-
-def check_auth(update: Update, cfg) -> bool:
-    if not cfg["allowed_ids"]:
+def _allowed(update: Update) -> bool:
+    if not ALLOWED_IDS:
         return True
-    uid = update.effective_user.id if update.effective_user else None
-    return uid in cfg["allowed_ids"]
+    u = update.effective_user.id if update.effective_user else None
+    return u in ALLOWED_IDS
 
-HELP_TEXT = (
-    "🤖 *TikTok Checker Bot*\n\n"
-    "• /check `<username ...>` — kiểm tra 1 hoặc nhiều username (cách nhau bởi khoảng trắng)\n"
-    "• Gửi *file .txt* chứa danh sách username (mỗi dòng 1 username) để kiểm tra hàng loạt.\n"
-    "• /help — hướng dẫn sử dụng\n\n"
-    "_Gợi ý_: Nên giới hạn mỗi lượt <= 200 username để tránh bị chặn tạm thời (429)."
-)
-
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
-
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
-
-def chunk_list(lst: List[str], size: int):
-    for i in range(0, len(lst), size):
-        yield lst[i:i+size]
-
-async def _respond_with_results(update: Update, results: dict):
-    live_list = results.get(LIVE, [])
-    die_list = results.get(DIE, [])
-    err_list = results.get(ERROR, [])
-
-    # Prepare in-memory files
-    files = []
-    if live_list:
-        files.append(("live.txt", "\n".join(live_list)))
-    if die_list:
-        files.append(("banned.txt", "\n".join(die_list)))
-    if err_list:
-        files.append(("errors.txt", "\n".join(err_list)))
-
-    # Summary message
-    summary = (
-        f"✅ *Xong!*\n\n"
-        f"• Live: *{len(live_list)}*\n"
-        f"• Die/Banned: *{len(die_list)}*\n"
-        f"• Lỗi: *{len(err_list)}*"
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _allowed(update):
+        return
+    await update.message.reply_text(
+        "📟 TikTok Checker Bot\n"
+        "/check <username ...> – kiểm tra nhanh\n"
+        "• Gửi file .txt (mỗi dòng 1 username) để kiểm tra hàng loạt.\n"
+        "Kết quả: live.txt, banned.txt, errors.txt"
     )
-    await update.message.reply_text(summary, parse_mode="Markdown")
 
-    # Send files as documents
-    for name, text in files:
-        bio = io.BytesIO(text.encode("utf-8"))
-        bio.name = name
-        await update.message.reply_document(document=InputFile(bio))
+help_cmd = start
 
 async def check_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cfg = get_config()
-    if not check_auth(update, cfg):
-        return await update.message.reply_text("⛔️ Bạn không có quyền dùng bot này.")
-    if not cfg["token"]:
-        return await update.message.reply_text("⚠️ BOT_TOKEN chưa được cấu hình.")
-    usernames = []
-    for arg in context.args:
-        # split by comma or whitespace
-        usernames += [x for x in arg.replace(",", " ").split() if x.strip()]
-    if not usernames:
-        return await update.message.reply_text("Cách dùng: /check username1 username2 ...")
-    if len(usernames) > cfg["max_bulk"]:
-        usernames = usernames[:cfg["max_bulk"]]
-        await update.message.reply_text(f"⚠️ Đã giới hạn còn {cfg['max_bulk']} username để tránh bị chặn.")
-    await update.message.reply_text("🕒 Đang kiểm tra, vui lòng đợi...")
-    loop = asyncio.get_event_loop()
-    results = await loop.run_in_executor(None, check_many, usernames, cfg["threads"], cfg["timeout"])
-    await _respond_with_results(update, results)
+    if not _allowed(update):
+        return
+    args = context.args or []
+    if not args:
+        await update.message.reply_text("Dùng: /check username1 username2 ...")
+        return
+    await update.message.reply_text(f"Đang kiểm tra {len(args)} username...")
+    results = check_many(args, threads=5)
+    counts = {k: len(v) for k, v in results.items()}
+    await update.message.reply_text(f"✅ LIVE: {counts.get(LIVE,0)} | 🔒 BANNED: {counts.get(BANNED,0)} | ⚠️ ERROR: {counts.get(ERROR,0)}")
+    paths = write_results(results, "results")
+    for p in paths.values():
+        if os.path.exists(p):
+            await update.message.reply_document(FSInputFile(p), filename=os.path.basename(p))
 
-async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cfg = get_config()
-    if not check_auth(update, cfg):
-        return await update.message.reply_text("⛔️ Bạn không có quyền dùng bot này.")
-    if not update.message or not update.message.document:
+async def file_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _allowed(update):
         return
     doc = update.message.document
+    if not doc:
+        return
     if not doc.file_name.lower().endswith(".txt"):
-        return await update.message.reply_text("Vui lòng gửi file .txt (mỗi dòng 1 username).")
-    # download to memory
+        await update.message.reply_text("Vui lòng gửi file .txt (mỗi dòng 1 username).")
+        return
+    os.makedirs("results", exist_ok=True)
+    path = os.path.join("results", f"upload_{doc.file_unique_id}.txt")
     f = await doc.get_file()
-    byts = await f.download_as_bytearray()
-    text = byts.decode("utf-8", errors="ignore")
-    usernames = [line.strip() for line in text.splitlines() if line.strip()]
-    if not usernames:
-        return await update.message.reply_text("File rỗng.")
-    if len(usernames) > cfg["max_bulk"]:
-        usernames = usernames[:cfg["max_bulk"]]
-        await update.message.reply_text(f"⚠️ Đã giới hạn còn {cfg['max_bulk']} username để tránh bị chặn.")
-    await update.message.reply_text(f"🕒 Nhận {len(usernames)} username. Đang kiểm tra...")
-    loop = asyncio.get_event_loop()
-    results = await loop.run_in_executor(None, check_many, usernames, cfg["threads"], cfg["timeout"])
-    await _respond_with_results(update, results)
+    await f.download_to_drive(path)
+    with open(path, "r", encoding="utf-8", errors="ignore") as fp:
+        names = [line.strip() for line in fp if line.strip()]
+    await update.message.reply_text(f"Đang kiểm tra {len(names)} username...")
+    results = check_many(names, threads=5)
+    counts = {k: len(v) for k, v in results.items()}
+    await update.message.reply_text(f"✅ LIVE: {counts.get(LIVE,0)} | 🔒 BANNED: {counts.get(BANNED,0)} | ⚠️ ERROR: {counts.get(ERROR,0)}")
+    paths = write_results(results, "results")
+    for p in paths.values():
+        if os.path.exists(p):
+            await update.message.reply_document(FSInputFile(p), filename=os.path.basename(p))
 
 def main():
-    cfg = get_config()
-    if not cfg["token"]:
-        raise SystemExit("BOT_TOKEN chưa cấu hình.")
-    app = ApplicationBuilder().token(cfg["token"]).build()
-    app.add_handler(CommandHandler("start", start_cmd))
+    if not BOT_TOKEN:
+        raise SystemExit("Missing BOT_TOKEN")
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("check", check_cmd))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
-    print("Bot is running...")
+    app.add_handler(MessageHandler(filters.Document.ALL, file_handler))
+    log.info("Bot started.")
     app.run_polling(close_loop=False)
 
 if __name__ == "__main__":
