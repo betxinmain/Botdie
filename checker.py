@@ -1,99 +1,131 @@
-            # -*- coding: utf-8 -*-
-            import os
-            import re
-            import time
-            import requests
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            from threading import Lock
+import os
+import re
+import time
+import html
+from typing import List, Tuple, Dict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-            TIKTOK_ENDPOINT = "https://www.tiktok.com/@{}"
-            HEADERS = {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                ),
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
-                "Connection": "keep-alive",
-            }
+import requests
 
-            LIVE = "live"
-            DIE = "die"
-            ERROR = "error"
+LIVE = "live"
+DIE = "die"
+ERROR = "error"
 
-            _result_lock = Lock()
+_DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Referer": "https://www.tiktok.com/",
+}
 
-            def _normalize_username(u: str) -> str:
-                u = u.strip().lstrip("@").strip()
-                return re.sub(r"[^a-zA-Z0-9._]", "", u)
+def _make_session() -> requests.Session:
+    s = requests.Session()
+    s.headers.update(_DEFAULT_HEADERS.copy())
+    s.timeout = 10
+    return s
 
-            def _parse_status(html: str) -> str:
-                # Heuristics:
-                # - "Couldn't find this account" → die
-                # - 404 page indicators → die
-                # - "This account is currently suspended" / "banned" / "blocked" → die
-                # - Otherwise if we find og:url/profile URL blocks → live
-                lower = html.lower()
-                if any(key in lower for key in [
-                    "couldn't find this account",
-                    "account not found",
-                    "page not available",
-                    "this page isn't available",
-                    "page unavailable",
-                    "http 404",
-                    "sign up for tiktok"  # some 404 templates
-                ]):
-                    return DIE
-                if any(k in lower for k in ["suspend", "suspended", "ban", "banned", "block", "blocked"]):
-                    # Treat clearly banned/suspended as die
-                    return DIE
-                # If OG tags suggest a valid profile
-                if 'property="og:url"' in lower or 'og:title' in lower or 'tt-user-header' in lower:
-                    return LIVE
-                # Fallback: if we can find "Followers" label
-                if "followers" in lower or "following" in lower or "likes" in lower:
-                    return LIVE
-                return ERROR
+def _normalize(username: str) -> str:
+    u = (username or "").strip()
+    if u.startswith("@"):
+        u = u[1:]
+    # keep only allowed chars: letters, numbers, underscore, dot
+    u = re.sub(r"[^A-Za-z0-9._]", "", u)
+    return u
 
-            def check_one(username: str, session: requests.Session, timeout: float = 10.0) -> str:
-                u = _normalize_username(username)
-                if not u:
-                    return ERROR
-                url = TIKTOK_ENDPOINT.format(u)
-                try:
-                    r = session.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
-                    # If redirected to search or safety page, still try parse body
-                    if r.status_code == 404:
-                        return DIE
-                    if r.status_code in (200, 301, 302):
-                        return _parse_status(r.text)
-                    if r.status_code == 429:
-                        # Rate limited; backoff a bit then retry once
-                        time.sleep(1.5)
-                        r2 = session.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
-                        if r2.status_code == 404:
-                            return DIE
-                        if r2.status_code in (200, 301, 302):
-                            return _parse_status(r2.text)
-                        return ERROR
-                    # Other codes → error
-                    return ERROR
-                except requests.RequestException:
-                    return ERROR
+def _looks_like_live(html_text: str) -> bool:
+    if not html_text:
+        return False
+    t = html_text
+    # Common signals on live accounts
+    if 'property="og:url"' in t and 'content="https://www.tiktok.com/@' in t:
+        return True
+    if '"followers"' in t or '"following"' in t or '"videoCount"' in t:
+        return True
+    # Some localized UI strings
+    if "Followers" in t or "Following" in t or "likes" in t.lower():
+        return True
+    return False
 
-            def check_many(usernames, threads: int = 5, timeout: float = 10.0):
-                usernames = [_normalize_username(u) for u in usernames if _normalize_username(u)]
-                results = {LIVE: [], DIE: [], ERROR: []}
-                if not usernames:
-                    return results
-                threads = max(1, min(5, int(threads or 1)))  # cap to 5
-                with requests.Session() as s, ThreadPoolExecutor(max_workers=threads) as ex:
-                    fut_map = {ex.submit(check_one, u, s, timeout): u for u in usernames}
-                    for fut in as_completed(fut_map):
-                        u = fut_map[fut]
-                        try:
-                            status = fut.result()
-                        except Exception:
-                            status = ERROR
-                        results[status].append(u)
-                return results
+def _looks_like_die(html_text: str) -> bool:
+    if not html_text:
+        return False
+    t = html.unescape(html_text).lower()
+    signals = [
+        "couldn't find this account",
+        "this account is unavailable",
+        "account suspended",
+        "account banned",
+        "page not available",
+        "page not found",
+        "không thể tìm thấy tài khoản",  # vi
+    ]
+    return any(sig in t for sig in signals)
+
+def check_username(username: str, session: requests.Session = None, timeout: int = 12) -> Tuple[str, str]:
+    """
+    Return (username, status) with status in {LIVE, DIE, ERROR}
+    """
+    u = _normalize(username)
+    if not u:
+        return (username, ERROR)
+    session = session or _make_session()
+    url = f"https://www.tiktok.com/@{u}"
+    try:
+        resp = session.get(url, allow_redirects=True, timeout=timeout)
+        # Handle rate limiting / gateway issues first
+        if resp.status_code in (429, 430, 502, 503, 504):
+            return (u, ERROR)
+        if resp.status_code == 404:
+            return (u, DIE)
+        txt = resp.text or ""
+        if _looks_like_die(txt):
+            return (u, DIE)
+        if _looks_like_live(txt):
+            return (u, LIVE)
+        # Fallback: if redirected to search or error pages
+        final_url = (resp.url or "").lower()
+        if "/search/" in final_url or "404" in final_url:
+            return (u, DIE)
+        # Unknown layout -> treat as ERROR to be safe
+        return (u, ERROR)
+    except requests.RequestException:
+        return (u, ERROR)
+
+def check_many(usernames: List[str], threads: int = 5, delay_between: float = 0.0) -> Dict[str, List[str]]:
+    """
+    Check a list of usernames concurrently.
+    Returns dict with keys LIVE/DIE/ERROR and list of usernames.
+    """
+    usernames = [u for u in map(_normalize, usernames) if u]
+    out = {LIVE: [], DIE: [], ERROR: []}
+    if not usernames:
+        return out
+
+    session = _make_session()
+
+    with ThreadPoolExecutor(max_workers=max(1, min(threads, 16))) as ex:
+        futures = {}
+        for i, u in enumerate(usernames):
+            if delay_between and i:
+                time.sleep(delay_between)
+            futures[ex.submit(check_username, u, session)] = u
+        for fut in as_completed(futures):
+            u, status = fut.result()
+            out.get(status, out[ERROR]).append(u)
+
+    return out
+
+def write_results(results: Dict[str, List[str]], folder: str = "results") -> Dict[str, str]:
+    os.makedirs(folder, exist_ok=True)
+    paths = {}
+    for key in (LIVE, DIE, ERROR):
+        path = os.path.join(folder, f"{key}.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(results.get(key, [])))
+        paths[key] = path
+    return paths
