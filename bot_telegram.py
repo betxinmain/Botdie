@@ -117,9 +117,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👋 Xin chào!\n"
         "• Gửi file .txt (mỗi dòng 1 username) để kiểm tra hàng loạt\n"
         "• Giới hạn song song: tối đa 5 để tránh 429\n"     
-      "•Lệnh /uses để xem số lần dùng miễn phí\n"
+      "• Lệnh /uses để xem số lần dùng miễn phí\n"
         "• Lưu Ý Chỉ Cung Cấp User Để Chúng Tôi Check, Tránh Ảnh Hưởng Tới Khi Bị Mất Thông Tin\n"
-      "Hệ Thống MuaTuongTac.Com Cung Cấp Tool - Clone Tiktok - Gmail EDu - Dịch Vụ MXH 24/7 (Tham Khảo)\n\n"
+      "Hệ Thống MuaTuongTac.Com Cung Cấp Tool - Clone Tiktok - Gmail EDu - Dịch Vụ MXH 24/7 (Tham Khảo)\n"
     )
     await update.message.reply_text(msg)
 
