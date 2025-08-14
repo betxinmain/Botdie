@@ -69,13 +69,7 @@ async def _gate_or_count(update: Update) -> bool:
             await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(kb))
         except Exception:
             try:
-             admin = (
-    "\nQuản trị:\n"
-    "• /credit <chat_id> <amount>\n"
-    "• /setprice <amount> <per_check|per_live>\n"
-)
-await update.message.reply_text(msg + admin, parse_mode=ParseMode.MARKDOWN)
-
+                await update.message.reply_text(msg + "
 
 Truy cập: https://MuaTuongTac.Com")
             except Exception:
@@ -128,6 +122,41 @@ def batch_check(usernames: List[str], timeout: float = 10.0) -> Dict[str, List[s
     return results
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    bal = get_balance(chat_id)
+    msg = (
+        "👋 Xin chào!
+"
+        f"Phí: {PRICE:,} VND / username — chế độ: **{PRICE_MODE}**
+"
+        f"Số dư hiện tại: **{bal:,} VND**
+
+"
+        "• /bind <user_id> — liên kết user id
+"
+        "• /topup [amount] — tạo QR nạp tiền
+"
+        "• /check <username>
+"
+        "• /balance, /me
+"
+        "• /free — nhận thêm lượt (Yeumoney)
+"
+        "• /uses — xem lượt miễn phí còn lại hôm nay
+"
+    )
+    if _is_admin(update):
+        msg += (
+            "
+Quản trị:
+"
+            "• /credit <chat_id> <amount>
+"
+            "• /setprice <amount> <per_check|per_live>
+"
+        )
+
+    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
     if not _is_allowed(update):
         return
     msg = (
