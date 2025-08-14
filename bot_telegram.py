@@ -69,7 +69,13 @@ async def _gate_or_count(update: Update) -> bool:
             await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(kb))
         except Exception:
             try:
-                await update.message.reply_text(msg + "
+             admin = (
+    "\nQuản trị:\n"
+    "• /credit <chat_id> <amount>\n"
+    "• /setprice <amount> <per_check|per_live>\n"
+)
+await update.message.reply_text(msg + admin, parse_mode=ParseMode.MARKDOWN)
+
 
 Truy cập: https://MuaTuongTac.Com")
             except Exception:
