@@ -60,12 +60,64 @@ async def _gate_or_count(update: Update) -> bool:
     if not usage_allowed(chat_id):
         msg = PURCHASE_MSG.format(free=FREE_USES)
         try:
-            awPhí\n"
+            await update.message.reply_text(msg)
+        except Exception:
+            pass
+        return False
+    # count this usage
+    inc_use(chat_id)
+    return True
+
+
+def _is_allowed(update: Update) -> bool:
+    if not ALLOWED:
+        return True
+    chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+    return chat_id in ALLOWED
+
+def normalize_username(u: str) -> str:
+    u = u.strip()
+    if u.startswith("@"):
+        u = u[1:]
+    # TikTok uniqueId: chữ, số, _ và .; ta giữ ký tự hợp lệ
+    u = re.sub(r"[^a-zA-Z0-9_.]", "", u)
+    return u
+
+def quick_check(username: str, session: requests.Session, timeout: float = 10.0) -> str:
+    url = TIKTOK_ENDPOINT.format(username)
+    try:
+        r = session.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
+        status = r.status_code
+        text = r.text if isinstance(r.text, str) else ""
+        return classify(username, status, text)
+    except requests.RequestException:
+        return "error"
+
+def batch_check(usernames: List[str], timeout: float = 10.0) -> Dict[str, List[str]]:
+    usernames = [normalize_username(u) for u in usernames if u.strip()]
+    usernames = [u for u in usernames if u]  # bỏ rỗng
+    results = {"live": [], "banned": [], "error": []}
+    if not usernames:
+        return results
+    with requests.Session() as s, ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+        fut2name = {ex.submit(quick_check, u, s, timeout): u for u in usernames}
+        for fut in as_completed(fut2name):
+            u = fut2name[fut]
+            try:
+                res = fut.result()
+            except Exception:
+                res = "error"
+            results.setdefault(res, []).append(u)
+    return results
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_allowed(update):
+        return
+    msg = (
+        "👋 Xin chào!\n"
+        "Bot check TikTok live/banned.\n\n"
         "• Gửi file .txt (mỗi dòng 1 username) để kiểm tra hàng loạt\n"
         "• Giới hạn song song: tối đa 5 để tránh 429\n"
-        "• Lưu Ý Chỉ Cung Cấp User Để Chúng Tôi Check, Tránh Ảnh Hưởng Tới Khi Bị Mất Thông Tin\n"
-      "Hệ Thống Cung Cấp Clone Tiktok - Gmail EDu - Dịch Vụ MXH 24/7 (Tham Khảo)\n\n"
-      
     )
     await update.message.reply_text(msg)
 
@@ -116,8 +168,8 @@ async def handle_text_batch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = sum(len(v) for v in res.values())
     summary = (
         f"🔎 Đã kiểm tra {total} username:\n"
-        f"  ✅ Tài Khoản Có Thể Sử Dụng: {len(res['live'])}\n"
-        f"  ❌ Tài Khoản Bị Khóa: {len(res['banned'])}\n"
+        f"  ✅ LIVE: {len(res['live'])}\n"
+        f"  ❌ BANNED: {len(res['banned'])}\n"
         f"  ⚠️ ERROR: {len(res['error'])}\n"
     )
     await update.message.reply_text(summary)
@@ -162,8 +214,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = sum(len(v) for v in res.values())
     summary = (
         f"🔎 Xong! Đã kiểm tra {total} username:\n"
-        f"  ✅ Tài Khoản Có Thể Sử Dụng: {len(res['live'])}\n"
-        f"  ❌ Tài Khoản Bị Khóa: {len(res['banned'])}\n"
+        f"  ✅ LIVE: {len(res['live'])}\n"
+        f"  ❌ BANNED: {len(res['banned'])}\n"
         f"  ⚠️ ERROR: {len(res['error'])}\n"
     )
     await update.message.reply_text(summary)
