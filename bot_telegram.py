@@ -222,14 +222,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bal = get_balance(chat_id)
     msg = (
         "👋 Xin chào!\n"
-        f"Phí: {PRICE:,} VND / username — chế độ: **{PRICE_MODE}**\n"
-        f"Số dư hiện tại: **{bal:,} VND**\n\n"
-        "• /bind <user_id> — liên kết user id\n"
-        "• /topup [amount] — tạo QR nạp tiền\n"
-        "• /check <username>\n"
-        "• /balance, /me\n"
-        "• /free — nhận thêm lượt (Yeumoney)\n"
-        "• /uses — xem lượt miễn phí còn lại hôm nay\n"
+         "👋 Bot check TikTok live/banned.\n"
+         "👋 Gửi file .txt (mỗi dòng 1 username) để kiểm tra hàng loạt\n"
+        "• /free — nhận thêm lượt bằng cách vượt link để sử dụng miễn phíphí (Yeumoney)\n"
+        "• 3 lượt — còn lại hôm nay\n"
     )
     if _is_admin(update):
         msg += (
