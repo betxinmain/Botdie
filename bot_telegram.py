@@ -115,9 +115,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     msg = (
         "👋 Xin chào!\n"
-        "Bot check TikTok live/banned.\n\n"
+        "Tôi Là Bot check TikTok live/banned.\n\n"
         "• Gửi file .txt (mỗi dòng 1 username) để kiểm tra hàng loạt\n"
         "• Giới hạn song song: tối đa 5 để tránh 429\n"
+        "• Lưu Ý Chỉ Cung Cấp User Để Chúng Tôi Check, Tránh Ảnh Hưởng Tới Khi Bị Mất Thông Tin\n"
+      "Hệ Thống Cung Cấp Clone Tiktok - Gmail EDu - Dịch Vụ MXH 24/7 (Tham Khảo)\n\n"
+      
     )
     await update.message.reply_text(msg)
 
