@@ -168,8 +168,8 @@ async def handle_text_batch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = sum(len(v) for v in res.values())
     summary = (
         f"🔎 Đã kiểm tra {total} username:\n"
-        f"  ✅ LIVE: {len(res['live'])}\n"
-        f"  ❌ BANNED: {len(res['banned'])}\n"
+        f"  ✅ Tài Khoản Có Thể Sử Dụng: {len(res['live'])}\n"
+        f"  ❌ Tài Khoản Bị Khóa: {len(res['banned'])}\n"
         f"  ⚠️ ERROR: {len(res['error'])}\n"
     )
     await update.message.reply_text(summary)
@@ -214,8 +214,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = sum(len(v) for v in res.values())
     summary = (
         f"🔎 Xong! Đã kiểm tra {total} username:\n"
-        f"  ✅ LIVE: {len(res['live'])}\n"
-        f"  ❌ BANNED: {len(res['banned'])}\n"
+        f"  ✅ Tài Khoản Có Thể Sử Dụng: {len(res['live'])}\n"
+        f"  ❌ Tài Khoản Bị Khóa: {len(res['banned'])}\n"
         f"  ⚠️ ERROR: {len(res['error'])}\n"
     )
     await update.message.reply_text(summary)
