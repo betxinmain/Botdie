@@ -45,10 +45,29 @@ from telegram import Update, InputFile
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
+from usage_limit import allowed as usage_allowed, inc_use, remaining, FREE_USES
+PURCHASE_MSG = os.getenv("PURCHASE_MSG", "Bạn đã sử dụng hết {free} lượt miễn phí. Mua tool tại MuaTuongTac.Com để dùng thêm.")
+
+
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 ALLOWED = [x.strip() for x in os.getenv("ALLOWED_CHAT_ID", "").split(",") if x.strip().isdigit()]
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", "5"))
 MAX_WORKERS = min(MAX_WORKERS, 5)  # giữ an toàn tránh 429
+
+
+async def _gate_or_count(update: Update) -> bool:
+    chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+    if not usage_allowed(chat_id):
+        msg = PURCHASE_MSG.format(free=FREE_USES)
+        try:
+            await update.message.reply_text(msg)
+        except Exception:
+            pass
+        return False
+    # count this usage
+    inc_use(chat_id)
+    return True
+
 
 def _is_allowed(update: Update) -> bool:
     if not ALLOWED:
@@ -105,7 +124,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await cmd_start(update, context)
 
+async def cmd_uses(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    r = remaining(chat_id)
+    await update.message.reply_text(f"Bạn còn {r} / {FREE_USES} lượt miễn phí.")
+
 async def cmd_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await _gate_or_count(update):
+        return
     if not _is_allowed(update):
         return
     if not context.args:
@@ -126,6 +152,8 @@ async def cmd_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"{badge} — @{username}\nhttps://www.tiktok.com/@{username}")
 
 async def handle_text_batch(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await _gate_or_count(update):
+        return
     """Cho phép người dùng dán nhiều username mỗi dòng."""
     if not _is_allowed(update):
         return
@@ -154,6 +182,8 @@ async def handle_text_batch(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_document(document=InputFile(bio))
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await _gate_or_count(update):
+        return
     if not _is_allowed(update):
         return
     doc = update.message.document
@@ -202,6 +232,7 @@ def main():
         raise SystemExit("❌ Thiếu TELEGRAM_BOT_TOKEN trong biến môi trường.")
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler(["start", "help"], cmd_start))
+    app.add_handler(CommandHandler("uses", cmd_uses))
     app.add_handler(CommandHandler("check", cmd_check))
     # text batch (>=2 dòng)
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_batch))
