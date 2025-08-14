@@ -183,7 +183,7 @@ async def cmd_topup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if amount <= 0: amount = DEFAULT_TOPUP_AMOUNT
     except Exception:
         amount = DEFAULT_TOPUP_AMOUNT
-    addinfo = f\"{TRANSFER_PREFIX}{uid}\"
+    addinfo = f"{TRANSFER_PREFIX}{uid}"
     qr_url = _build_qr_url(addinfo, amount)
     caption = (
         "🔌 Nạp tiền via VietQR\\n"
